@@ -31,7 +31,7 @@ def build_lal_model(filename, params, pickle_path=None):
 
     print('Building lal regression model..')
     lalModel = RandomForestRegressor(n_estimators=params['est'], max_depth=params['depth'],
-                                     max_features=params['feat'], oob_score=True, n_jobs=8)
+                                     max_features=params['feat'], oob_score=True, n_jobs=4)
 
     lalModel.fit(regression_features, np.ravel(regression_labels))
 

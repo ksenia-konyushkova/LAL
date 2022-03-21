@@ -20,7 +20,7 @@ class ActiveLearner:
         self.indicesUnknown = dataset.indicesUnknown
         # base classification model
         self.nEstimators = nEstimators
-        self.model = RandomForestClassifier(self.nEstimators, n_jobs=8)
+        self.model = RandomForestClassifier(self.nEstimators, n_jobs=4)
         self.name = name
         
         
