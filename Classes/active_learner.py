@@ -2,6 +2,7 @@ import numpy as np
 from sklearn import metrics
 from sklearn.ensemble import RandomForestRegressor
 from scipy import stats
+from sklearn.base import clone
 from sklearn.ensemble import RandomForestClassifier
 import time
 
@@ -139,4 +140,49 @@ class ActiveLearnerLAL(ActiveLearner):
         selectedIndex = self.indicesUnknown[selectedIndex1toN]
             
         self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([selectedIndex])]))
-        self.indicesUnknown = np.delete(self.indicesUnknown, selectedIndex1toN)  
+        self.indicesUnknown = np.delete(self.indicesUnknown, selectedIndex1toN)
+
+
+class ActiveLearnerPNML(ActiveLearner):
+    def selectNext(self):
+        # 1. For each unlabelled point x
+        #   i. For each label t
+        #       a. Add the (x, t) pair to the data and fit
+        #       b. Get p(t|x) and store
+        #   ii. Normalize p(t | x) for all t
+        #   iii. Compute uncertainty using some metric
+        #   iv. Update index of most uncertain point if necessary
+        labels = np.unique(self.dataset.trainLabels)
+        max_uncertainity = float("-inf")
+        selectedIndex = -1
+        selectedIndex1toN = -1
+        for i, unknown_index in enumerate(self.indicesUnknown):
+            label_probabilities = []
+            for j, t in enumerate(labels):
+                temp_model = clone(self.model)
+                train_data = np.concatenate(
+                    (
+                        self.dataset.trainData[self.indicesKnown, :],
+                        self.dataset.trainData[(unknown_index,), :]
+                    )
+                )
+                train_labels = np.concatenate(
+                    (
+                        self.dataset.trainLabels[self.indicesKnown, :],
+                        np.array([[t]])
+                    )
+                )
+                train_labels = np.ravel(train_labels)
+                temp_model = temp_model.fit(train_data, train_labels)
+                # Get the probability predicted for class t
+                pred = temp_model.predict_proba(self.dataset.trainData[(unknown_index,), :])[:, j]
+                label_probabilities.append(pred)
+            label_probabilities = np.array(label_probabilities)
+            entropy = stats.entropy(label_probabilities)
+            if entropy > max_uncertainity:
+                max_uncertainity = entropy
+                selectedIndex = unknown_index
+                selectedIndex1toN = i
+
+        self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([selectedIndex])]))
+        self.indicesUnknown = np.delete(self.indicesUnknown, selectedIndex1toN)
