@@ -1,3 +1,6 @@
+import getopt
+import sys
+
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 # for plotting
@@ -8,7 +11,8 @@ from Classes.active_learner import ActiveLearnerRandom, ActiveLearnerPNML
 from Classes.active_learner import ActiveLearnerUncertainty
 from Classes.active_learner import ActiveLearnerLAL
 # import the dataset class
-from Classes.dataset import DatasetCheckerboard2x2
+from Classes.dataset import DatasetCheckerboard2x2, DatasetCheckerboard4x4, DatasetRotatedCheckerboard2x2, \
+    DatasetStriatumMini
 # import Experiment and Result classes that will be responsible for running AL and saving the results
 from Classes.experiment import Experiment
 from Classes.results import Results
@@ -46,7 +50,7 @@ def build_lal_model(filename, params, pickle_path=None):
     return lalModel
 
 
-def build_lal_model_regression():
+def build_lal_model_rand():
     """
     LAL Regression Model
 
@@ -122,28 +126,78 @@ def plot_results(results_filename, out_name):
 
 
 if __name__ == "__main__":
-    dataset = DatasetCheckerboard2x2()
-    dataset.setStartState(2)
+    options, arguments = getopt.getopt(
+        sys.argv[1:],
+        "",
+        [
+            "experiments=",
+            "iterations=",
+            "learners=",
+            "dataset=",
+            "name="
+        ]
+    )
+    valid_datasets = {
+        "checkerboard2x2": DatasetCheckerboard2x2,
+        "checkerboard4x4": DatasetCheckerboard4x4,
+        "rotatedcheckerboard2x2": DatasetRotatedCheckerboard2x2,
+        "striatummini": DatasetStriatumMini
+    }
 
-    nEstimators = 50
+    supported_learners = [
+        "rand",
+        "uncertainty",
+        "pnml",
+        "lal-rand",
+        "lal-iter"
+    ]
 
-    lalModel1 = build_lal_model_regression()
-    lalModel2 = build_lal_model_iterative()
+    normal_learners = {
+        "rand": ActiveLearnerRandom,
+        "uncertainty": ActiveLearnerUncertainty,
+        "pnml": ActiveLearnerPNML
+    }
 
-    alR = ActiveLearnerRandom(dataset, nEstimators, 'random')
-    alU = ActiveLearnerUncertainty(dataset, nEstimators, 'uncertainty')
-    alLALindepend = ActiveLearnerLAL(dataset, nEstimators, 'lal-rand', lalModel1)
-    alLALiterative = ActiveLearnerLAL(dataset, nEstimators, 'lal-iter', lalModel2)
-    alPNmL = ActiveLearnerPNML(dataset, nEstimators, 'PNmL')
-    als = [alR, alU, alLALindepend, alLALiterative, alPNmL]
+    experiments = 1
+    iterations = 100
+    dataset = None
+    name = None
+    for o, a in options:
+        if o == "--experiments":
+            experiments = int(a)
+        if o == "--iterations":
+            iterations = int(a)
+        if o == "--dataset":
+            dataset = valid_datasets[a.lower()]()
+            dataset.setStartState(2)
+        if o == "--name":
+            name = a
 
-    name = "Checkerboard2x2"
+    learners = []
+    # The definition of the learners relies on the other args
+    for o, a in options:
+        if o == "--learners":
+            learners = a.split(",")
+            for i, learner in enumerate(learners):
+                if learner not in supported_learners:
+                    print(f"Supported learners are: {supported_learners}")
+                    exit(1)
+
+                if learner in normal_learners:
+                    learners[i] = normal_learners[learner](dataset, 50, learner)
+                elif learner == "lal-rand":
+                    model = build_lal_model_rand()
+                    learners[i] = ActiveLearnerLAL(dataset, 50, learner, model)
+                elif learner == "lal-iter":
+                    model = build_lal_model_iterative()
+                    learners[i] = ActiveLearnerLAL(dataset, 50, learner, model)
+
     run_experiments(
         dataset,
-        als,
-        1,
-        nEstimators,
-        100,
+        learners,
+        experiments,
+        50,
+        iterations,
         name
     )
 
