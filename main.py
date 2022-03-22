@@ -58,8 +58,7 @@ def build_lal_model_rand():
     """
     return build_lal_model(
         'LAL-randomtree-simulatedunbalanced-big.npz',
-        {'est': 2000, 'depth': 40, 'feat': 6},
-        pickle_path=lal_model_regression_path
+        {'est': 2000, 'depth': 40, 'feat': 6}
     )
 
 

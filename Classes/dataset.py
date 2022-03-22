@@ -19,24 +19,27 @@ class Dataset:
         self.testData = np.array([[]])
         self.testLabels = np.array([[]])
         
-    def setStartState(self, nStart):
+    def setStartState(self, nStart, seed=None):
         ''' This functions initialises fields indicesKnown and indicesUnknown which contain the indices of labelled and unlabeled datapoints
         Input:
         nStart -- number of labelled datapoints (size of indicesKnown)
+        seed -- optional seed to be used for the randomness involved in choosing the initial points
         '''
         
         self.nStart = nStart
         # first get 1 positive and 1 negative point so that both classes are represented and initial classifer could be trained.
         cl1 = np.nonzero(self.trainLabels==1)[0]
-        indices1 = np.random.permutation(cl1)
+        # If a seed was provided, use a custom RandomState with that seed, otherwise use np.random
+        r = np.random.RandomState(seed) if seed is not None else np.random
+        indices1 = r.permutation(cl1)
         self.indicesKnown = np.array([indices1[0]]);
         cl2 = np.nonzero(self.trainLabels==0)[0]
-        indices2 = np.random.permutation(cl2)
+        indices2 = r.permutation(cl2)
         self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([indices2[0]])]));
         # combine all the rest of the indices that have not been sampled yet
         indicesRestAll = np.concatenate(([indices1[1:], indices2[1:]]));
         # permute them
-        indicesRestAll = np.random.permutation(indicesRestAll)
+        indicesRestAll = r.permutation(indicesRestAll)
         # if we need more than 2 datapoints, select the rest nStart-2 at random
         if nStart>2:
             self.indicesKnown = np.concatenate(([self.indicesKnown, indicesRestAll[0:nStart-2]]));             

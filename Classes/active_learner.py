@@ -104,7 +104,6 @@ class ActiveLearnerLAL(ActiveLearner):
     
     
     def selectNext(self):
-        
         unknown_data = self.dataset.trainData[self.indicesUnknown,:]
         known_labels = self.dataset.trainLabels[self.indicesKnown,:]
         n_lablled = np.size(self.indicesKnown)
@@ -178,6 +177,7 @@ class ActiveLearnerPNML(ActiveLearner):
                 pred = temp_model.predict_proba(self.dataset.trainData[(unknown_index,), :])[:, j]
                 label_probabilities.append(pred)
             label_probabilities = np.array(label_probabilities)
+            # stats.entropy() will automatically normalize
             entropy = stats.entropy(label_probabilities)
             if entropy > max_uncertainity:
                 max_uncertainity = entropy
