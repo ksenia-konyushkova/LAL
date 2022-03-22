@@ -71,8 +71,7 @@ def build_lal_model_iterative():
     """
     return build_lal_model(
         'LAL-iterativetree-simulatedunbalanced-big.npz',
-        {'est': 1000, 'depth': 40, 'feat': 6},
-        pickle_path=lal_model_iterative_path
+        {'est': 1000, 'depth': 40, 'feat': 6}
     )
 
 
