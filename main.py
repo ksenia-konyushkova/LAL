@@ -14,7 +14,7 @@ from Classes.active_learner import ActiveLearnerUncertainty
 from Classes.active_learner import ActiveLearnerLAL
 # import the dataset class
 from Classes.dataset import DatasetCheckerboard2x2, DatasetCheckerboard4x4, DatasetRotatedCheckerboard2x2, \
-    DatasetStriatumMini
+    DatasetStriatumMini, DatasetSimulatedUnbalanced
 # import Experiment and Result classes that will be responsible for running AL and saving the results
 from Classes.experiment import Experiment
 from Classes.results import Results
@@ -140,7 +140,8 @@ if __name__ == "__main__":
         "checkerboard2x2": DatasetCheckerboard2x2,
         "checkerboard4x4": DatasetCheckerboard4x4,
         "rotatedcheckerboard2x2": DatasetRotatedCheckerboard2x2,
-        "striatummini": DatasetStriatumMini
+        "striatummini": DatasetStriatumMini,
+        "unbalanced": lambda: DatasetSimulatedUnbalanced(1000, 2)
     }
 
     supported_learners = [
