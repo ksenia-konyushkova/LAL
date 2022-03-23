@@ -1,26 +1,22 @@
 import numpy as np
 from sklearn import metrics
-from sklearn.ensemble import RandomForestRegressor
 from scipy import stats
 from sklearn.base import clone
-from sklearn.ensemble import RandomForestClassifier
-import time
 
 
 class ActiveLearner:
     '''This is the base class for active learning models'''
 
-    def __init__(self, dataset, nEstimators, name):
+    def __init__(self, dataset, name, model):
         '''input: dataset -- an object of class Dataset or any inheriting classes
-                  nEstimators -- the number of estimators for the base classifier, usually set to 50
-                  name -- name of the method for saving the results later'''
+                  name -- name of the method for saving the results later
+                  model -- the scikit-learn model that will be doing the learning'''
         
         self.dataset = dataset
         self.indicesKnown = dataset.indicesKnown
         self.indicesUnknown = dataset.indicesUnknown
         # base classification model
-        self.nEstimators = nEstimators
-        self.model = RandomForestClassifier(self.nEstimators, n_jobs=4)
+        self.model = model
         self.name = name
         
         
@@ -71,11 +67,9 @@ class ActiveLearner:
         
 class ActiveLearnerRandom(ActiveLearner):
     '''Randomly samples the points'''
-    
     def selectNext(self):
-                
         self.indicesUnknown = np.random.permutation(self.indicesUnknown)
-        self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([self.indicesUnknown[0]])]));            
+        self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([self.indicesUnknown[0]])]))
         self.indicesUnknown = self.indicesUnknown[1:]
         
         
@@ -95,11 +89,8 @@ class ActiveLearnerUncertainty(ActiveLearner):
         
 class ActiveLearnerLAL(ActiveLearner):
     '''Points are sampled according to a method described in K. Konyushkova, R. Sznitman, P. Fua 'Learning Active Learning from data'  '''
-    
-    def __init__(self, dataset, nEstimators, name, lalModel):
-        
-        ActiveLearner.__init__(self, dataset, nEstimators, name)
-        self.model = RandomForestClassifier(self.nEstimators, oob_score=True, n_jobs=8)
+    def __init__(self, dataset, name, model, lalModel):
+        ActiveLearner.__init__(self, dataset, name, model)
         self.lalModel = lalModel
     
     

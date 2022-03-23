@@ -1,10 +1,9 @@
 class Experiment:
     '''The class that runs active learning experiment'''
     
-    def __init__(self, nIterations, nEstimators, performanceMeasures, dataset, alearners, comment=''):
+    def __init__(self, nIterations, performanceMeasures, dataset, alearners, comment=''):
         
         self.nIterations = nIterations
-        self.nEstimators = nEstimators
         self.performanceMeasures = performanceMeasures
         self.dataset = dataset
         self.alearners = alearners

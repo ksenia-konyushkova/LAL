@@ -2,11 +2,13 @@ import getopt
 import sys
 
 import numpy as np
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 # for plotting
 import matplotlib.pyplot as plt
 
 # import various AL strategies
+from sklearn.linear_model import LogisticRegression
+
 from Classes.active_learner import ActiveLearnerRandom, ActiveLearnerPNML
 from Classes.active_learner import ActiveLearnerUncertainty
 from Classes.active_learner import ActiveLearnerLAL
@@ -81,8 +83,6 @@ def run_experiments(
     active_learners,
     # number of experiment repeats
     num_experiments,
-    # number of estimators (random trees) in the classifier
-    estimators,
     # number of iterations in AL experiment
     num_iterations,
     # The name of the experiment. Will be the name of the file in ./exp
@@ -94,7 +94,7 @@ def run_experiments(
 ):
     if quality_metrics is None:
         quality_metrics = ["accuracy"]
-    exp = Experiment(num_iterations, estimators, quality_metrics, data, active_learners)
+    exp = Experiment(num_iterations, quality_metrics, data, active_learners)
     # the Results class helps to add, save and plot results of the experiments
     res = Results(exp, num_experiments)
 
@@ -132,7 +132,8 @@ if __name__ == "__main__":
             "iterations=",
             "learners=",
             "dataset=",
-            "name="
+            "name=",
+            "model="
         ]
     )
     valid_datasets = {
@@ -156,10 +157,17 @@ if __name__ == "__main__":
         "pnml": ActiveLearnerPNML
     }
 
+    valid_models = {
+        "random-forest": lambda : RandomForestClassifier(n_estimators=50, n_jobs=4),
+        "logistic": lambda : LogisticRegression(solver="lbfgs", penalty="none"),
+        # "linear"
+    }
+
     experiments = 1
     iterations = 100
     dataset = None
     name = None
+    model = None
     for o, a in options:
         if o == "--experiments":
             experiments = int(a)
@@ -167,9 +175,15 @@ if __name__ == "__main__":
             iterations = int(a)
         if o == "--dataset":
             dataset = valid_datasets[a.lower()]()
-            dataset.setStartState(2)
+            dataset.setStartState(2, seed=42)
         if o == "--name":
             name = a
+        if o == "--model":
+            if a not in valid_models:
+                print(f"Supported models are: {valid_models}")
+                exit(1)
+            else:
+                model = valid_models[a]()
 
     learners = []
     # The definition of the learners relies on the other args
@@ -182,19 +196,18 @@ if __name__ == "__main__":
                     exit(1)
 
                 if learner in normal_learners:
-                    learners[i] = normal_learners[learner](dataset, 50, learner)
+                    learners[i] = normal_learners[learner](dataset, learner, model)
                 elif learner == "lal-rand":
-                    model = build_lal_model_rand()
-                    learners[i] = ActiveLearnerLAL(dataset, 50, learner, model)
+                    lal_model = build_lal_model_rand()
+                    learners[i] = ActiveLearnerLAL(dataset, learner, model, lal_model)
                 elif learner == "lal-iter":
-                    model = build_lal_model_iterative()
-                    learners[i] = ActiveLearnerLAL(dataset, 50, learner, model)
+                    lal_model = build_lal_model_iterative()
+                    learners[i] = ActiveLearnerLAL(dataset, learner, model, lal_model)
 
     run_experiments(
         dataset,
         learners,
         experiments,
-        50,
         iterations,
         name
     )
