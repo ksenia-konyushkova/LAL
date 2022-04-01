@@ -1,0 +1,6 @@
+out/*
+exp/*
+*.pyc
+Lib/
+Scripts/
+*.png
