@@ -1,13 +1,17 @@
+from multiprocessing import Pool
+
 import numpy as np
+from Classes.models import Model, PyTorchModel
 from sklearn import metrics
 from scipy import stats
 from sklearn.base import clone
+from sklearn.ensemble import RandomForestClassifier
 
 
 class ActiveLearner:
     '''This is the base class for active learning models'''
 
-    def __init__(self, dataset, name, model):
+    def __init__(self, dataset, name, model: Model):
         '''input: dataset -- an object of class Dataset or any inheriting classes
                   name -- name of the method for saving the results later
                   model -- the scikit-learn model that will be doing the learning'''
@@ -42,8 +46,8 @@ class ActiveLearner:
         input: performanceMeasures -- a list of performance measure that we would like to estimate. Possible values are 'accuracy', 'TN', 'TP', 'FN', 'FP', 'auc' 
         output: performance -- a dictionary with performanceMeasures as keys and values consisting of lists with values of performace measure at all iterations of the algorithm'''
         performance = {}
-        test_prediction = self.model.predict(self.dataset.testData)   
-        m = metrics.confusion_matrix(self.dataset.testLabels,test_prediction)
+        test_prediction = self.model.predict(self.dataset.testData).flatten()
+        m = metrics.confusion_matrix(self.dataset.testLabels, test_prediction)
         
         if 'accuracy' in performanceMeasures:
             performance['accuracy'] = metrics.accuracy_score(self.dataset.testLabels,test_prediction)
@@ -89,10 +93,9 @@ class ActiveLearnerUncertainty(ActiveLearner):
         
 class ActiveLearnerLAL(ActiveLearner):
     '''Points are sampled according to a method described in K. Konyushkova, R. Sznitman, P. Fua 'Learning Active Learning from data'  '''
-    def __init__(self, dataset, name, model, lalModel):
+    def __init__(self, dataset, name, model: RandomForestClassifier, lalModel):
         ActiveLearner.__init__(self, dataset, name, model)
         self.lalModel = lalModel
-    
     
     def selectNext(self):
         unknown_data = self.dataset.trainData[self.indicesUnknown,:]
@@ -132,7 +135,6 @@ class ActiveLearnerLAL(ActiveLearner):
         self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([selectedIndex])]))
         self.indicesUnknown = np.delete(self.indicesUnknown, selectedIndex1toN)
 
-
 class ActiveLearnerPNML(ActiveLearner):
     def selectNext(self):
         # 1. For each unlabelled point x
@@ -149,7 +151,7 @@ class ActiveLearnerPNML(ActiveLearner):
         for i, unknown_index in enumerate(self.indicesUnknown):
             label_probabilities = []
             for j, t in enumerate(labels):
-                temp_model = clone(self.model)
+                temp_model = self.model.clone()
                 train_data = np.concatenate(
                     (
                         self.dataset.trainData[self.indicesKnown, :],
@@ -177,3 +179,11 @@ class ActiveLearnerPNML(ActiveLearner):
 
         self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([selectedIndex])]))
         self.indicesUnknown = np.delete(self.indicesUnknown, selectedIndex1toN)
+
+
+class ActiveLearnerACNML(ActiveLearner):
+    def __init__(self, dataset, name, model: PyTorchModel):
+        super().__init__(dataset, name, model)
+
+    def selectNext(self):
+        pass

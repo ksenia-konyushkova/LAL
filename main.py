@@ -2,6 +2,7 @@ import getopt
 import sys
 
 import numpy as np
+from Classes.models import SKLearnModel, PyTorchModel, SimpleMLP
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 # for plotting
 import matplotlib.pyplot as plt
@@ -161,14 +162,19 @@ if __name__ == "__main__":
     valid_models = {
         "random-forest": lambda: RandomForestClassifier(n_estimators=50, n_jobs=4),
         "logistic": lambda: LogisticRegression(solver="lbfgs", penalty="none"),
-        # "linear"
+        "mlp": lambda input_size, output_size: PyTorchModel(
+            SimpleMLP(input_size, 10, output_size),
+            100,
+            0.01,
+            early_stopping_patience=50
+        )
     }
 
     experiments = 1
     iterations = 100
     dataset = None
     name = None
-    model = None
+    model_name = None
     for o, a in options:
         if o == "--experiments":
             experiments = int(a)
@@ -184,7 +190,7 @@ if __name__ == "__main__":
                 print(f"Supported models are: {valid_models}")
                 exit(1)
             else:
-                model = valid_models[a]()
+                model_name = a
 
     learners = []
     # The definition of the learners relies on the other args
@@ -196,6 +202,15 @@ if __name__ == "__main__":
                     print(f"Supported learners are: {supported_learners}")
                     exit(1)
 
+                if model_name == 'mlp':
+                    model = PyTorchModel(
+                        SimpleMLP(dataset.trainData.shape[1], 10, len(np.unique(dataset.trainLabels))),
+                        1000,
+                        0.01,
+                        early_stopping_patience=50
+                    )
+                else:
+                    model = valid_models[model_name]()
                 if learner in normal_learners:
                     learners[i] = normal_learners[learner](dataset, learner, model)
                 elif learner == "lal-rand":
