@@ -141,7 +141,7 @@ if __name__ == "__main__":
         "checkerboard4x4": DatasetCheckerboard4x4,
         "rotatedcheckerboard2x2": DatasetRotatedCheckerboard2x2,
         "striatummini": DatasetStriatumMini,
-        "unbalanced": lambda: DatasetSimulatedUnbalanced(1000, 2)
+        "unbalanced": lambda seed=None: DatasetSimulatedUnbalanced(1000, 2, seed)
     }
 
     supported_learners = [
@@ -159,8 +159,8 @@ if __name__ == "__main__":
     }
 
     valid_models = {
-        "random-forest": lambda : RandomForestClassifier(n_estimators=50, n_jobs=4),
-        "logistic": lambda : LogisticRegression(solver="lbfgs", penalty="none"),
+        "random-forest": lambda: RandomForestClassifier(n_estimators=50, n_jobs=4),
+        "logistic": lambda: LogisticRegression(solver="lbfgs", penalty="none"),
         # "linear"
     }
 
@@ -175,8 +175,8 @@ if __name__ == "__main__":
         if o == "--iterations":
             iterations = int(a)
         if o == "--dataset":
-            dataset = valid_datasets[a.lower()]()
-            dataset.setStartState(2, seed=42)
+            dataset = valid_datasets[a.lower()](seed=42)
+            dataset.setStartState(2)
         if o == "--name":
             name = a
         if o == "--model":
