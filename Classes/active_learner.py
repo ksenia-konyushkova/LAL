@@ -197,7 +197,7 @@ class ActiveLearnerACNML(ActiveLearner):
         for n in range(batch_size):
             self.model.set_parameters(latent[n, :])
             probabilities = torch.Tensor(self.model.predict_proba(self.dataset.trainData))
-            log_prob = torch.sum(torch.log(torch.gather(probabilities, dim=1, index=torch.Tensor(self.dataset.trainLabels).long())))
+            log_prob = torch.sum(torch.log(torch.maximum(torch.gather(probabilities, dim=1, index=torch.Tensor(self.dataset.trainLabels).long()), torch.Tensor([1e-9]))))
             result[n] = log_prob
         return torch.Tensor(result)
 
@@ -230,7 +230,7 @@ class ActiveLearnerACNML(ActiveLearner):
         def update(params):
             loss = svi.objective(params)
             loss.backward()
-            optim = torch.optim.SGD(params, lr=1e-4, momentum=0.9)
+            optim = torch.optim.SGD(params, lr=1e-5, momentum=0.9)
             optim.step()
             return params
 
