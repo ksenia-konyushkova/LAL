@@ -1,25 +1,28 @@
+from multiprocessing import Pool
+
 import numpy as np
+from Classes.models import Model, PyTorchModel
 from sklearn import metrics
-from sklearn.ensemble import RandomForestRegressor
 from scipy import stats
+from sklearn.base import clone
 from sklearn.ensemble import RandomForestClassifier
-import time
+from Classes.svi import GaussianSVI
+import torch
 
 
 class ActiveLearner:
     '''This is the base class for active learning models'''
 
-    def __init__(self, dataset, nEstimators, name):
+    def __init__(self, dataset, name, model: Model):
         '''input: dataset -- an object of class Dataset or any inheriting classes
-                  nEstimators -- the number of estimators for the base classifier, usually set to 50
-                  name -- name of the method for saving the results later'''
+                  name -- name of the method for saving the results later
+                  model -- the scikit-learn model that will be doing the learning'''
         
         self.dataset = dataset
         self.indicesKnown = dataset.indicesKnown
         self.indicesUnknown = dataset.indicesUnknown
         # base classification model
-        self.nEstimators = nEstimators
-        self.model = RandomForestClassifier(self.nEstimators, n_jobs=8)
+        self.model = model
         self.name = name
         
         
@@ -45,8 +48,8 @@ class ActiveLearner:
         input: performanceMeasures -- a list of performance measure that we would like to estimate. Possible values are 'accuracy', 'TN', 'TP', 'FN', 'FP', 'auc' 
         output: performance -- a dictionary with performanceMeasures as keys and values consisting of lists with values of performace measure at all iterations of the algorithm'''
         performance = {}
-        test_prediction = self.model.predict(self.dataset.testData)   
-        m = metrics.confusion_matrix(self.dataset.testLabels,test_prediction)
+        test_prediction = self.model.predict(self.dataset.testData).flatten()
+        m = metrics.confusion_matrix(self.dataset.testLabels, test_prediction)
         
         if 'accuracy' in performanceMeasures:
             performance['accuracy'] = metrics.accuracy_score(self.dataset.testLabels,test_prediction)
@@ -70,11 +73,9 @@ class ActiveLearner:
         
 class ActiveLearnerRandom(ActiveLearner):
     '''Randomly samples the points'''
-    
     def selectNext(self):
-                
         self.indicesUnknown = np.random.permutation(self.indicesUnknown)
-        self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([self.indicesUnknown[0]])]));            
+        self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([self.indicesUnknown[0]])]))
         self.indicesUnknown = self.indicesUnknown[1:]
         
         
@@ -94,16 +95,11 @@ class ActiveLearnerUncertainty(ActiveLearner):
         
 class ActiveLearnerLAL(ActiveLearner):
     '''Points are sampled according to a method described in K. Konyushkova, R. Sznitman, P. Fua 'Learning Active Learning from data'  '''
-    
-    def __init__(self, dataset, nEstimators, name, lalModel):
-        
-        ActiveLearner.__init__(self, dataset, nEstimators, name)
-        self.model = RandomForestClassifier(self.nEstimators, oob_score=True, n_jobs=8)
+    def __init__(self, dataset, name, model: RandomForestClassifier, lalModel):
+        ActiveLearner.__init__(self, dataset, name, model)
         self.lalModel = lalModel
     
-    
     def selectNext(self):
-        
         unknown_data = self.dataset.trainData[self.indicesUnknown,:]
         known_labels = self.dataset.trainLabels[self.indicesKnown,:]
         n_lablled = np.size(self.indicesKnown)
@@ -139,4 +135,156 @@ class ActiveLearnerLAL(ActiveLearner):
         selectedIndex = self.indicesUnknown[selectedIndex1toN]
             
         self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([selectedIndex])]))
-        self.indicesUnknown = np.delete(self.indicesUnknown, selectedIndex1toN)  
+        self.indicesUnknown = np.delete(self.indicesUnknown, selectedIndex1toN)
+
+class ActiveLearnerPNML(ActiveLearner):
+    def selectNext(self):
+        # 1. For each unlabelled point x
+        #   i. For each label t
+        #       a. Add the (x, t) pair to the data and fit
+        #       b. Get p(t|x) and store
+        #   ii. Normalize p(t | x) for all t
+        #   iii. Compute uncertainty using some metric
+        #   iv. Update index of most uncertain point if necessary
+        labels = np.unique(self.dataset.trainLabels)
+        max_uncertainity = float("-inf")
+        selectedIndex = -1
+        selectedIndex1toN = -1
+        for i, unknown_index in enumerate(self.indicesUnknown):
+            label_probabilities = []
+            for j, t in enumerate(labels):
+                temp_model = self.model.clone()
+                train_data = np.concatenate(
+                    (
+                        self.dataset.trainData[self.indicesKnown, :],
+                        self.dataset.trainData[(unknown_index,), :]
+                    )
+                )
+                train_labels = np.concatenate(
+                    (
+                        self.dataset.trainLabels[self.indicesKnown, :],
+                        np.array([[t]])
+                    )
+                )
+                train_labels = np.ravel(train_labels)
+                temp_model = temp_model.fit(train_data, train_labels)
+                # Get the probability predicted for class t
+                pred = temp_model.predict_proba(self.dataset.trainData[(unknown_index,), :])[:, j]
+                label_probabilities.append(pred)
+            label_probabilities = np.array(label_probabilities)
+            # stats.entropy() will automatically normalize
+            entropy = stats.entropy(label_probabilities)
+            if entropy > max_uncertainity:
+                max_uncertainity = entropy
+                selectedIndex = unknown_index
+                selectedIndex1toN = i
+
+        self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([selectedIndex])]))
+        self.indicesUnknown = np.delete(self.indicesUnknown, selectedIndex1toN)
+
+
+class ActiveLearnerACNML(ActiveLearner):
+    def __init__(self, dataset, name, model: PyTorchModel):
+        super().__init__(dataset, name, model)
+
+    def log_prior(self, latent):
+        normal = torch.distributions.normal.Normal(0, 1)
+        return torch.sum(normal.log_prob(latent), axis=-1)
+
+    def log_likelihood(self, latent):
+        batch_size = latent.shape[0]
+        result = np.zeros(batch_size)
+        for n in range(batch_size):
+            self.model.set_parameters(latent[n, :])
+            probabilities = torch.Tensor(self.model.predict_proba(self.dataset.trainData))
+            log_prob = torch.sum(torch.log(torch.maximum(torch.gather(probabilities, dim=1, index=torch.Tensor(self.dataset.trainLabels).long()), torch.Tensor([1e-9]))))
+            result[n] = log_prob
+        return torch.Tensor(result)
+
+    def log_joint(self, latent):
+        return self.log_likelihood(latent) + self.log_prior(latent)
+
+    def get_approximate_posterior(self):
+        print(self.model.total_params)
+
+        # Hyperparameters
+        n_iters = 800
+        num_samples_per_iter = 5
+
+        svi = GaussianSVI(true_posterior=self.log_joint, num_samples_per_iter=num_samples_per_iter)
+
+        # Set up optimizer.
+        D = self.model.total_params
+        init_mean = torch.randn(D)
+        init_mean.requires_grad = True
+        init_log_std  = torch.randn(D)
+        init_log_std.requires_grad = True
+        init_params = (init_mean, init_log_std)
+
+        params = init_params
+
+        def callback(params, t):
+            if t % 25 == 0:
+                print("Iteration {} lower bound {}".format(t, svi.objective(params)))
+
+        def update(params):
+            loss = svi.objective(params)
+            loss.backward()
+            optim = torch.optim.SGD(params, lr=1e-5, momentum=0.9)
+            optim.step()
+            return params
+
+        # Main loop.
+        print("Optimizing variational parameters...")
+        for i in range(n_iters):
+            params = update(params)
+            callback(params, i)
+
+        return params
+
+    def selectNext(self):
+        # 1. For each unlabelled point x
+        #   i. For each label t
+        #       a. Add the (x, t) pair to the data and fit
+        #       b. Get p(t|x) and store
+        #   ii. Normalize p(t | x) for all t
+        #   iii. Compute uncertainty using some metric
+        #   iv. Update index of most uncertain point if necessary
+        labels = np.unique(self.dataset.trainLabels)
+        max_uncertainity = float("-inf")
+        selectedIndex = -1
+        selectedIndex1toN = -1
+
+        (svi_mean, svi_log_std) = self.get_approximate_posterior()
+
+        for i, unknown_index in enumerate(self.indicesUnknown):
+            label_probabilities = []
+            for j, t in enumerate(labels):
+                temp_model = self.model.clone()
+                train_data = np.concatenate(
+                    (
+                        self.dataset.trainData[self.indicesKnown, :],
+                        self.dataset.trainData[(unknown_index,), :]
+                    )
+                )
+                train_labels = np.concatenate(
+                    (
+                        self.dataset.trainLabels[self.indicesKnown, :],
+                        np.array([[t]])
+                    )
+                )
+                train_labels = np.ravel(train_labels)
+                temp_model.set_parameters(svi_mean)
+                # Get the probability predicted for class t
+                pred = temp_model.predict_proba(self.dataset.trainData[(unknown_index,), :])[:, j]
+                label_probabilities.append(pred + torch.exp(self.log_joint(svi_mean.unsqueeze(dim=0))).item())
+            label_probabilities = np.array(label_probabilities)
+            # stats.entropy() will automatically normalize
+            entropy = stats.entropy(label_probabilities)
+            if entropy > max_uncertainity:
+                max_uncertainity = entropy
+                selectedIndex = unknown_index
+                selectedIndex1toN = i
+
+        self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([selectedIndex])]))
+        self.indicesUnknown = np.delete(self.indicesUnknown, selectedIndex1toN)

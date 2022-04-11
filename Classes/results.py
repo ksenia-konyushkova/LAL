@@ -16,7 +16,6 @@ class Results:
         if experiment is not None:
             experiment.dtstname = experiment.dataset.__class__.__name__
             self.nIterations = experiment.nIterations
-            self.nEstimators = experiment.nEstimators
             self.performanceMeasures = experiment.performanceMeasures
             self.dataset = experiment.dataset
             self.alearners = []
