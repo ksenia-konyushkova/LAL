@@ -22,6 +22,7 @@ class Experiment:
             for alearner in self.alearners:
                 alearner.train()
                 perf = alearner.evaluate(self.performanceMeasures)
+                print(perf)
                 for key in perf:
                     self.performances[alearner.name][key].append(perf[key])
                 alearner.selectNext()

@@ -188,49 +188,55 @@ class ActiveLearnerACNML(ActiveLearner):
         super().__init__(dataset, name, model)
 
     def log_prior(self, latent):
-        return np.sum(torch.norm.logpdf(latent, 0.0, 1.0), axis=-1)
+        normal = torch.distributions.normal.Normal(0, 1)
+        return torch.sum(normal.log_prob(latent), axis=-1)
 
     def log_likelihood(self, latent):
-        tuned_model = self.model.set_parameters(latent)
-        probabilities = torch.log(tuned_model(self.dataset.trainData))
-        return torch.sum(torch.gather(probabilities, dim=1, index=self.dataset.trainLabels))
+        batch_size = latent.shape[0]
+        result = np.zeros(batch_size)
+        for n in range(batch_size):
+            self.model.set_parameters(latent[n, :])
+            probabilities = torch.Tensor(self.model.predict_proba(self.dataset.trainData))
+            log_prob = torch.sum(torch.log(torch.gather(probabilities, dim=1, index=torch.Tensor(self.dataset.trainLabels).long())))
+            result[n] = log_prob
+        return torch.Tensor(result)
 
     def log_joint(self, latent):
         return self.log_likelihood(latent) + self.log_prior(latent)
 
-    def diag_gaussian_logpdf(self, x, mean, log_std):
-        # Evaluate the density of single point on a diagonal multivariate Gaussian.
-        return np.sum(torch.norm.logpdf(x, mean, np.exp(log_std)), axis=-1)
-
     def get_approximate_posterior(self):
+        print(self.model.total_params)
 
         # Hyperparameters
         n_iters = 800
-        stepsize = 0.0001
-        num_samples_per_iter = 50
+        num_samples_per_iter = 5
 
         svi = GaussianSVI(true_posterior=self.log_joint, num_samples_per_iter=num_samples_per_iter)
 
         # Set up optimizer.
-        D = self.model.total_params.shape[0]
-        init_mean = np.zeros(D)
-        init_log_std  = np.zeros(D)
+        D = self.model.total_params
+        init_mean = torch.randn(D)
+        init_mean.requires_grad = True
+        init_log_std  = torch.randn(D)
+        init_log_std.requires_grad = True
         init_params = (init_mean, init_log_std)
 
         params = init_params
 
         def callback(params, t):
             if t % 25 == 0:
-                print("Iteration {} lower bound {}".format(t, svi.objective(params, t)))
+                print("Iteration {} lower bound {}".format(t, svi.objective(params)))
 
         def update(params):
-            grad_params = torch.autograd.grad(svi.objective)(params)
-            params -= stepsize * grad_params
+            loss = svi.objective(params)
+            loss.backward()
+            optim = torch.optim.SGD(params, lr=1e-4, momentum=0.9)
+            optim.step()
             return params
 
         # Main loop.
         print("Optimizing variational parameters...")
-        for i in n_iters:
+        for i in range(n_iters):
             params = update(params)
             callback(params, i)
 
@@ -268,10 +274,10 @@ class ActiveLearnerACNML(ActiveLearner):
                     )
                 )
                 train_labels = np.ravel(train_labels)
-                temp_model = temp_model.set_parameters(svi_mean)
+                temp_model.set_parameters(svi_mean)
                 # Get the probability predicted for class t
                 pred = temp_model.predict_proba(self.dataset.trainData[(unknown_index,), :])[:, j]
-                label_probabilities.append(pred + self.log_joint(svi_mean))
+                label_probabilities.append(pred + torch.exp(self.log_joint(svi_mean.unsqueeze(dim=0))).item())
             label_probabilities = np.array(label_probabilities)
             # stats.entropy() will automatically normalize
             entropy = stats.entropy(label_probabilities)

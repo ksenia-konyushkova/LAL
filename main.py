@@ -150,7 +150,8 @@ if __name__ == "__main__":
         "uncertainty",
         "pnml",
         "lal-rand",
-        "lal-iter"
+        "lal-iter",
+        "acnml"
     ]
 
     normal_learners = {
