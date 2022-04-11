@@ -6,6 +6,8 @@ from sklearn import metrics
 from scipy import stats
 from sklearn.base import clone
 from sklearn.ensemble import RandomForestClassifier
+from Classes.svi import GaussianSVI
+import torch
 
 
 class ActiveLearner:
@@ -185,5 +187,98 @@ class ActiveLearnerACNML(ActiveLearner):
     def __init__(self, dataset, name, model: PyTorchModel):
         super().__init__(dataset, name, model)
 
+    def log_prior(self, latent):
+        return np.sum(torch.norm.logpdf(latent, 0.0, 1.0), axis=-1)
+
+    def log_likelihood(self, latent):
+        tuned_model = self.model.set_parameters(latent)
+        probabilities = torch.log(tuned_model(self.dataset.trainData))
+        return torch.sum(torch.gather(probabilities, dim=1, index=self.dataset.trainLabels))
+
+    def log_joint(self, latent):
+        return self.log_likelihood(latent) + self.log_prior(latent)
+
+    def diag_gaussian_logpdf(self, x, mean, log_std):
+        # Evaluate the density of single point on a diagonal multivariate Gaussian.
+        return np.sum(torch.norm.logpdf(x, mean, np.exp(log_std)), axis=-1)
+
+    def get_approximate_posterior(self):
+
+        # Hyperparameters
+        n_iters = 800
+        stepsize = 0.0001
+        num_samples_per_iter = 50
+
+        svi = GaussianSVI(true_posterior=self.log_joint, num_samples_per_iter=num_samples_per_iter)
+
+        # Set up optimizer.
+        D = self.model.total_params.shape[0]
+        init_mean = np.zeros(D)
+        init_log_std  = np.zeros(D)
+        init_params = (init_mean, init_log_std)
+
+        params = init_params
+
+        def callback(params, t):
+            if t % 25 == 0:
+                print("Iteration {} lower bound {}".format(t, svi.objective(params, t)))
+
+        def update(params):
+            grad_params = torch.autograd.grad(svi.objective)(params)
+            params -= stepsize * grad_params
+            return params
+
+        # Main loop.
+        print("Optimizing variational parameters...")
+        for i in n_iters:
+            params = update(params)
+            callback(params, i)
+
+        return params
+
     def selectNext(self):
-        pass
+        # 1. For each unlabelled point x
+        #   i. For each label t
+        #       a. Add the (x, t) pair to the data and fit
+        #       b. Get p(t|x) and store
+        #   ii. Normalize p(t | x) for all t
+        #   iii. Compute uncertainty using some metric
+        #   iv. Update index of most uncertain point if necessary
+        labels = np.unique(self.dataset.trainLabels)
+        max_uncertainity = float("-inf")
+        selectedIndex = -1
+        selectedIndex1toN = -1
+
+        (svi_mean, svi_log_std) = self.get_approximate_posterior()
+
+        for i, unknown_index in enumerate(self.indicesUnknown):
+            label_probabilities = []
+            for j, t in enumerate(labels):
+                temp_model = self.model.clone()
+                train_data = np.concatenate(
+                    (
+                        self.dataset.trainData[self.indicesKnown, :],
+                        self.dataset.trainData[(unknown_index,), :]
+                    )
+                )
+                train_labels = np.concatenate(
+                    (
+                        self.dataset.trainLabels[self.indicesKnown, :],
+                        np.array([[t]])
+                    )
+                )
+                train_labels = np.ravel(train_labels)
+                temp_model = temp_model.set_parameters(svi_mean)
+                # Get the probability predicted for class t
+                pred = temp_model.predict_proba(self.dataset.trainData[(unknown_index,), :])[:, j]
+                label_probabilities.append(pred + self.log_joint(svi_mean))
+            label_probabilities = np.array(label_probabilities)
+            # stats.entropy() will automatically normalize
+            entropy = stats.entropy(label_probabilities)
+            if entropy > max_uncertainity:
+                max_uncertainity = entropy
+                selectedIndex = unknown_index
+                selectedIndex1toN = i
+
+        self.indicesKnown = np.concatenate(([self.indicesKnown, np.array([selectedIndex])]))
+        self.indicesUnknown = np.delete(self.indicesUnknown, selectedIndex1toN)
