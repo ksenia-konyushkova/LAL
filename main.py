@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 # import various AL strategies
 from sklearn.linear_model import LogisticRegression
 
-from Classes.active_learner import ActiveLearnerRandom, ActiveLearnerPNML
+from Classes.active_learner import ActiveLearnerRandom, ActiveLearnerPNML, ActiveLearnerACNML
 from Classes.active_learner import ActiveLearnerUncertainty
 from Classes.active_learner import ActiveLearnerLAL
 # import the dataset class
@@ -156,7 +156,8 @@ if __name__ == "__main__":
     normal_learners = {
         "rand": ActiveLearnerRandom,
         "uncertainty": ActiveLearnerUncertainty,
-        "pnml": ActiveLearnerPNML
+        "pnml": ActiveLearnerPNML,
+        "acnml": ActiveLearnerACNML
     }
 
     valid_models = {
